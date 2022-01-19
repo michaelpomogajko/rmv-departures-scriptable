@@ -15,6 +15,13 @@ const DEFAULT_PARAMS = {
   format: 'json',
 }
 
+const GRADIENT_COLORS = ['#4b749f', '#243748'];
+
+
+const gradient = new LinearGradient();
+gradient.colors = GRADIENT_COLORS.map(color => new Color(color));
+gradient.locations = [0, 1];
+
 if (!API_KEY || !API_KEY.length) {
   console.warn('No API_KEY found!');
 }
@@ -122,12 +129,13 @@ const createWidget = async () => {
   const { currentStop, departures } = await getData();
 
   let widget = new ListWidget();
+  widget.backgroundGradient = gradient;
   let nextRefresh = Date.now() + 1000 * 30 // add 30 second to now
   widget.refreshAfterDate = new Date(nextRefresh)
 
   widget.useDefaultPadding();
-  let headlineStack = widget.addStack();
-  let headline = headlineStack.addText('🚍 ' + currentStop);
+  let headline = widget.addText('🚍 ' + currentStop);
+  headline.lineLimit = 1;
   headline.font = Font.mediumSystemFont(16)
 
   widget.addSpacer();
@@ -142,9 +150,9 @@ const createWidget = async () => {
     rowStack.setPadding(2, 4, 2, 4)
     rowStack.cornerRadius = 5;
     if ((idx % 2)) {
-      rowStack.backgroundColor = new Color('#333333');
+      rowStack.backgroundColor = new Color('#11111160');
     } else {
-      rowStack.backgroundColor = new Color('#222222');
+      rowStack.backgroundColor = new Color('#22222260');
     }
 
     let lineCell = rowStack.addStack();
@@ -165,13 +173,14 @@ const createWidget = async () => {
     depStack.addSpacer(2);
   }
 
-  widget.addSpacer();
+  // widget.addSpacer();
 
   const lastUpdatedStack = widget.addStack();
   lastUpdatedStack.setPadding(2, 4, 2, 4);
   lastUpdatedStack.addSpacer();
   const lastUpdated = lastUpdatedStack.addText('Last Update:  ' + getTime())
   lastUpdated.font = Font.lightSystemFont(10);
+  lastUpdated.textColor = new Color('#eeeeee');
   lastUpdatedStack.addSpacer();
 
   return widget;
