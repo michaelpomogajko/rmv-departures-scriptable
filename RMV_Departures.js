@@ -67,8 +67,8 @@ const getDepartures = async (stopId) => {
   const data = await fetch(config.urls.departures, params)
 
   const sanitizedDir = (direction) => {
-    if (direction.length > 26) {
-      return direction.slice(0, 22) + '..'
+    if (direction.length >= 26) {
+      return direction.slice(0, direction.length - 3) + '...'
     }
     return direction;
   }
@@ -117,10 +117,10 @@ const createWidget = async () => {
     let errorWidget = new ListWidget();
     let stack = errorWidget.addStack();
     stack.layoutVertically();
-    let errrorText = stack.addText('No RMV API Key provided!');
-    errorText.font = Font.title();
+    stack.centerAlignContent();
+    let errorText = stack.addText('No RMV API Key provided!');
+    errorText.font = Font.title2();
     let message = stack.addText('Please add API key to widget parameters');
-    errorWidget.addTex('No RMV API Key provided!')
 
     return errorWidget;
   }
