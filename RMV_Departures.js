@@ -1,14 +1,23 @@
+
+/* Config */
 const BASE_URL = 'https://www.rmv.de/hapi/latest';
+const API_KEY = args.widgetParameter;
+const MAX_JOURNEYS = 4;
+const URLS = {
+  stops: BASE_URL + '/location.nearbystops',
+  departures: BASE_URL + '/departureBoard',
+}
 
-const config = {
-  urls: {
-    stops: `${BASE_URL}/location.nearbystops`,
-    departures: `${BASE_URL}/departureBoard`
-  },
-  maxJourneys: 4,
-  refreshInterval: 1000 * 60,
-};
+const MAX_CHAR_LENGTH = 24;
 
+const DEFAULT_PARAMS = {
+  accessId: API_KEY,
+  format: 'json',
+}
+
+if (!API_KEY || !API_KEY.length) {
+  console.warn('No API_KEY found!');
+}
 
 const getTime = () => {
   const now = new Date();
@@ -28,26 +37,14 @@ const fetch = async (url, params) => {
   }
 }
 
-const getAccessId = () => {
-  const accessId = args.widgetParameter;
-  console.log(JSON.stringify({ accessId }));
-  if (!accessId || accessId.length === 0) {
-    console.error('No accessId found');
-    return null;
-  }
-  return accessId;
-}
-
 const getNearbyStop = async (location) => {
-  const accessId = getAccessId();
   const params = {
-    accessId,
-    format: 'json',
+    ...DEFAULT_PARAMS,
     originCoordLat: location.lat,
     originCoordLong: location.long,
   };
 
-  const data = await fetch(config.urls.stops, params)
+  const data = await fetch(URLS.stops, params)
   const stopId = data.stopLocationOrCoordLocation[0].StopLocation.extId;
   const name = data.stopLocationOrCoordLocation[0].StopLocation.name;
 
@@ -56,19 +53,17 @@ const getNearbyStop = async (location) => {
 
 
 const getDepartures = async (stopId) => {
-  const accessId = getAccessId();
   const params = {
-    accessId,
-    format: 'json',
+    ...DEFAULT_PARAMS,
     id: stopId,
-    maxJourneys: config.maxJourneys
+    maxJourneys: MAX_JOURNEYS
   }
 
-  const data = await fetch(config.urls.departures, params)
+  const data = await fetch(URLS.departures, params)
 
   const sanitizedDir = (direction) => {
-    if (direction.length >= 26) {
-      return direction.slice(0, direction.length - 3) + '...'
+    if (direction.length >= MAX_CHAR_LENGTH) {
+      return direction.slice(0, MAX_CHAR_LENGTH - 3) + '...'
     }
     return direction;
   }
@@ -112,8 +107,7 @@ const getData = async () => {
 }
 
 const createWidget = async () => {
-  const accessId = getAccessId();
-  if (!accessId) {
+  if (!API_KEY) {
     let errorWidget = new ListWidget();
     let stack = errorWidget.addStack();
     stack.layoutVertically();
@@ -132,7 +126,6 @@ const createWidget = async () => {
   widget.refreshAfterDate = new Date(nextRefresh)
 
   widget.useDefaultPadding();
-  // widget.backgroundColor = config.bgColor;
   let headlineStack = widget.addStack();
   let headline = headlineStack.addText('🚍 ' + currentStop);
   headline.font = Font.mediumSystemFont(16)
@@ -143,7 +136,7 @@ const createWidget = async () => {
   depStack.layoutVertically();
 
   for (const [idx, dep] of departures.entries()) {
-    if (idx === config.maxJourneys) break;
+    if (idx === MAX_JOURNEYS) break;
 
     let rowStack = depStack.addStack();
     rowStack.setPadding(2, 4, 2, 4)
