@@ -1,8 +1,3 @@
-const now = new Date();
-
-const month = (now.getMonth() + 1).toString().padStart(2, '0');
-const nowformatted = `${now.getDate()}.${month} ${now.getHours()}:${now.getMinutes()}`;
-
 const BASE_URL = 'https://www.rmv.de/hapi/latest';
 
 const config = {
@@ -10,14 +5,14 @@ const config = {
     stops: `${BASE_URL}/location.nearbystops`,
     departures: `${BASE_URL}/departureBoard`
   },
-  maxJourneys: 3,
+  maxJourneys: 4,
   refreshInterval: 1000 * 60,
-  bgColor: new Color('#068471'),
 };
 
-const defaultParams = {
-  accessId: args.widgetParameter,
-  format: 'json',
+
+const getTime = () => {
+  const now = new Date();
+  return now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
 const fetch = async (url, params) => {
@@ -27,36 +22,32 @@ const fetch = async (url, params) => {
     const data = await new Request(fetchUrl).loadJSON();
     return data;
   } catch (e) {
+    cosole.error('Error fetching data');
     console.error(e);
     return {}
   }
 }
 
-// const getLocation = async () => {
-//   try {
-//     if (args.widgetParameter) {
-//       let fixedCoordinates = args.widgetParameter.split(",").map(parseFloat)
-//       return { latitude: fixedCoordinates[0], longitude: fixedCoordinates[1] }
-//     } else {
-//       return await Location.current()
-//     }
-//   } catch (e) {
-//     return null;
-//   }
-// }
-
-console.log(args.widgetParameter);
+const getAccessId = () => {
+  const accessId = args.widgetParameter;
+  console.log(JSON.stringify({ accessId }));
+  if (!accessId || accessId.length === 0) {
+    console.error('No accessId found');
+    return null;
+  }
+  return accessId;
+}
 
 const getNearbyStop = async (location) => {
+  const accessId = getAccessId();
   const params = {
-    ...defaultParams,
+    accessId,
+    format: 'json',
     originCoordLat: location.lat,
     originCoordLong: location.long,
   };
 
   const data = await fetch(config.urls.stops, params)
-  console.log('data');
-  console.log(data);
   const stopId = data.stopLocationOrCoordLocation[0].StopLocation.extId;
   const name = data.stopLocationOrCoordLocation[0].StopLocation.name;
 
@@ -65,69 +56,139 @@ const getNearbyStop = async (location) => {
 
 
 const getDepartures = async (stopId) => {
+  const accessId = getAccessId();
   const params = {
-    ...defaultParams,
+    accessId,
+    format: 'json',
     id: stopId,
     maxJourneys: config.maxJourneys
   }
 
   const data = await fetch(config.urls.departures, params)
 
+  const sanitizedDir = (direction) => {
+    if (direction.length > 26) {
+      return direction.slice(0, 22) + '..'
+    }
+    return direction;
+  }
+
   return data.Departure.map(dep => ({
     line: dep.name,
-    time: dep.rtTime || dep.time,
-    direction: dep.direction
+    time: (dep.rtTime || dep.time).slice(0, -3),
+    direction: sanitizedDir(dep.direction)
   }));
 }
 
+const getLocation = async () => {
+  const loc = {
+    lat: 52.5,
+    long: 13.4,
+  };
+
+  try {
+    const { latitude, longitude } = await Location.current();
+    loc.lat = latitude;
+    loc.long = longitude;
+    return loc;
+  } catch (error) {
+    console.error('Cannot get location');
+    return loc;
+  }
+}
+
+
 
 const getData = async () => {
-  const { latitude, longitude } = await Location.current();
-  const { name, stopId } = await getNearbyStop({ lat: latitude, long: longitude });
+  const { lat, long } = await getLocation();
+
+  const startReqTime = Date.now();
+  const { name, stopId } = await getNearbyStop({ lat, long });
   const departures = await getDepartures(stopId);
+  const stopReqTime = Date.now();
+  console.log('Request took ' + (stopReqTime - startReqTime) / 1000 + 's');
+
   return { currentStop: name, departures };
 }
 
 const createWidget = async () => {
+  const accessId = getAccessId();
+  if (!accessId) {
+    let errorWidget = new ListWidget();
+    let stack = errorWidget.addStack();
+    stack.layoutVertically();
+    let errrorText = stack.addText('No RMV API Key provided!');
+    errorText.font = Font.title();
+    let message = stack.addText('Please add API key to widget parameters');
+    errorWidget.addTex('No RMV API Key provided!')
+
+    return errorWidget;
+  }
+
   const { currentStop, departures } = await getData();
 
-  let widget = new ListWidget()
+  let widget = new ListWidget();
+  let nextRefresh = Date.now() + 1000 * 30 // add 30 second to now
+  widget.refreshAfterDate = new Date(nextRefresh)
 
-  widget.setPadding(8, 8, 8, 8)
-  widget.backgroundColor = config.bgColor;
-  let headlineStack = widget.addStack()
-  headlineStack.layoutVertically()
-  headlineStack.topAlignContent()
-
+  widget.useDefaultPadding();
+  // widget.backgroundColor = config.bgColor;
+  let headlineStack = widget.addStack();
   let headline = headlineStack.addText('🚍 ' + currentStop);
   headline.font = Font.mediumSystemFont(16)
-  headline.centerAlignText();
 
-  headlineStack.addSpacer()
+  widget.addSpacer();
 
-  departures.forEach(dep => {
-    let depStack = widget.addStack();
-    let line = depStack.addText(dep.line);
+  let depStack = widget.addStack();
+  depStack.layoutVertically();
+
+  for (const [idx, dep] of departures.entries()) {
+    if (idx === config.maxJourneys) break;
+
+    let rowStack = depStack.addStack();
+    rowStack.setPadding(2, 4, 2, 4)
+    rowStack.cornerRadius = 5;
+    if ((idx % 2)) {
+      rowStack.backgroundColor = new Color('#333333');
+    } else {
+      rowStack.backgroundColor = new Color('#222222');
+    }
+
+    let lineCell = rowStack.addStack();
+    lineCell.layoutVertically();
+    lineCell.size = new Size(40, 16);
+    let line = lineCell.addText(dep.line);
     line.leftAlignText();
-    let time = depStack.addText(dep.time.slice(0, -3));
-    time.centerAlignText();
-    let dir = depStack.addText(dep.direction);
-    dir.rightAlignText();
-    depStack.addSpacer();
-  })
+    line.font = Font.mediumMonospacedSystemFont(14)
+    rowStack.addSpacer(16);
 
-  widget.refreshAfterDate = new Date(Date.now() + config.refreshInterval);
+    let time = rowStack.addText(dep.time);
+    time.font = Font.regularMonospacedSystemFont(14)
+    rowStack.addSpacer();
+
+    let dir = rowStack.addText(dep.direction);
+    dir.font = Font.regularMonospacedSystemFont(14)
+    dir.rightAlignText();
+    depStack.addSpacer(2);
+  }
+
+  widget.addSpacer();
+
+  const lastUpdatedStack = widget.addStack();
+  lastUpdatedStack.setPadding(2, 4, 2, 4);
+  lastUpdatedStack.addSpacer();
+  const lastUpdated = lastUpdatedStack.addText('Last Update:  ' + getTime())
+  lastUpdated.font = Font.lightSystemFont(10);
+  lastUpdatedStack.addSpacer();
+
   return widget;
 }
-
 
 const widget = await createWidget();
 
 if (config.runsInWidget) {
-  // Runs inside a widget so add it to the homescreen widget
   Script.setWidget(widget);
+  Script.complete();
 } else {
-  // Show the medium widget inside the app
   widget.presentMedium();
 }
-Script.complete();
