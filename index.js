@@ -1,12 +1,15 @@
 
 /* Config */
 const BASE_URL = 'https://www.rmv.de/hapi/latest';
-const API_KEY = args.widgetParameter;
+let API_KEY = args.widgetParameter;
+const FALLBACK_API_KEY = ''; // paste in your api key for debugging inside scriptable app
 const MAX_JOURNEYS = 4;
 const URLS = {
   stops: BASE_URL + '/location.nearbystops',
   departures: BASE_URL + '/departureBoard',
 }
+
+const NOW = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
 const MAX_CHAR_LENGTH = 24;
 
@@ -16,19 +19,16 @@ const DEFAULT_PARAMS = {
 }
 
 const GRADIENT_COLORS = ['#4b749f', '#243748'];
-
-
 const gradient = new LinearGradient();
 gradient.colors = GRADIENT_COLORS.map(color => new Color(color));
 gradient.locations = [0, 1];
 
+
 if (!API_KEY || !API_KEY.length) {
   console.warn('No API_KEY found!');
-}
-
-const getTime = () => {
-  const now = new Date();
-  return now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  if (!args.runsInWidget) {
+    API_KEY = FALLBACK_API_KEY;
+  }
 }
 
 const fetch = async (url, params) => {
@@ -40,7 +40,20 @@ const fetch = async (url, params) => {
   } catch (e) {
     cosole.error('Error fetching data');
     console.error(e);
-    return {}
+    return null;
+  }
+}
+
+
+const getLocation = async () => {
+  try {
+    const { latitude, longitude } = await Location.current();
+    console.log(`Lat: ${latitude}, Long: ${longitude}`);
+    return { lat: latitude, long: longitude };
+  } catch (e) {
+    console.error('Cannot get location');
+    console.error(e);
+    return null;
   }
 }
 
@@ -51,11 +64,23 @@ const getNearbyStop = async (location) => {
     originCoordLong: location.long,
   };
 
-  const data = await fetch(URLS.stops, params)
-  const stopId = data.stopLocationOrCoordLocation[0].StopLocation.extId;
-  const name = data.stopLocationOrCoordLocation[0].StopLocation.name;
+  try {
+    const data = await fetch(URLS.stops, params)
+    if (!data || !data.stopLocationOrCoordLocation) {
+      throw new Error('No stops found');
+    }
 
-  return { name, stopId };
+    const stopId = data.stopLocationOrCoordLocation[0].StopLocation.extId;
+    const name = data.stopLocationOrCoordLocation[0].StopLocation.name;
+
+    return { name, stopId };
+
+  } catch (e) {
+    console.error('Error fetching nearby stops');
+    console.error(e);
+    return null;
+  }
+
 }
 
 
@@ -82,55 +107,70 @@ const getDepartures = async (stopId) => {
   }));
 }
 
-const getLocation = async () => {
-  const loc = {
-    lat: 52.5,
-    long: 13.4,
-  };
-
-  try {
-    const { latitude, longitude } = await Location.current();
-    loc.lat = latitude;
-    loc.long = longitude;
-    return loc;
-  } catch (error) {
-    console.error('Cannot get location');
-    return loc;
+const ErrorWidget = (title, message) => {
+  let errorWidget = new ListWidget();
+  errorWidget.backgroundGradient = gradient;
+  let stack = errorWidget.addStack();
+  stack.layoutVertically();
+  stack.centerAlignContent();
+  let widgetTitle = stack.addText(title);
+  if (message) {
+    widgetTitle.font = Font.title2();
+    stack.addText(message);
   }
+
+  return errorWidget;
 }
 
 
-
 const getData = async () => {
-  const { lat, long } = await getLocation();
+  const location = await getLocation();
 
-  const startReqTime = Date.now();
-  const { name, stopId } = await getNearbyStop({ lat, long });
+  if (!location) return {
+    error: {
+      title: `Can't get location!`,
+      message: `Please try again later`
+    }
+  }
+
+  const nearByStop = await getNearbyStop(location);
+
+  if (!nearByStop) {
+    return {
+      error: {
+        title: `Can't get nearby stops!`,
+        message: `Please try again later`
+      }
+    }
+  }
+
+  const { name, stopId } = nearByStop;
+
   const departures = await getDepartures(stopId);
-  const stopReqTime = Date.now();
-  console.log('Request took ' + (stopReqTime - startReqTime) / 1000 + 's');
+
+  if (!departures) {
+    return {
+      error: {
+        title: `Can't get departures!`,
+        message: `Please try again later`
+      }
+    }
+  }
 
   return { currentStop: name, departures };
 }
 
 const createWidget = async () => {
-  if (!API_KEY) {
-    let errorWidget = new ListWidget();
-    let stack = errorWidget.addStack();
-    stack.layoutVertically();
-    stack.centerAlignContent();
-    let errorText = stack.addText('No RMV API Key provided!');
-    errorText.font = Font.title2();
-    let message = stack.addText('Please add API key to widget parameters');
+  const { currentStop, departures, error } = await getData();
 
-    return errorWidget;
+  if (error) {
+    return ErrorWidget(error.title, error.message);
   }
 
-  const { currentStop, departures } = await getData();
 
   let widget = new ListWidget();
   widget.backgroundGradient = gradient;
-  let nextRefresh = Date.now() + 1000 * 30 // add 30 second to now
+  let nextRefresh = Date.now() + 1000 * 30
   widget.refreshAfterDate = new Date(nextRefresh)
 
   widget.useDefaultPadding();
@@ -143,13 +183,14 @@ const createWidget = async () => {
   let depStack = widget.addStack();
   depStack.layoutVertically();
 
-  for (const [idx, dep] of departures.entries()) {
-    if (idx === MAX_JOURNEYS) break;
+
+  departures.forEach((dep, idx) => {
+    if (idx === MAX_JOURNEYS) return;
 
     let rowStack = depStack.addStack();
     rowStack.setPadding(2, 4, 2, 4)
     rowStack.cornerRadius = 5;
-    if ((idx % 2)) {
+    if (idx % 2) {
       rowStack.backgroundColor = new Color('#11111160');
     } else {
       rowStack.backgroundColor = new Color('#22222260');
@@ -157,7 +198,7 @@ const createWidget = async () => {
 
     let lineCell = rowStack.addStack();
     lineCell.layoutVertically();
-    lineCell.size = new Size(40, 16);
+    lineCell.size = new Size(60, 16);
     let line = lineCell.addText(dep.line);
     line.leftAlignText();
     line.font = Font.mediumMonospacedSystemFont(14)
@@ -171,14 +212,12 @@ const createWidget = async () => {
     dir.font = Font.regularMonospacedSystemFont(14)
     dir.rightAlignText();
     depStack.addSpacer(2);
-  }
-
-  // widget.addSpacer();
+  })
 
   const lastUpdatedStack = widget.addStack();
   lastUpdatedStack.setPadding(2, 4, 2, 4);
   lastUpdatedStack.addSpacer();
-  const lastUpdated = lastUpdatedStack.addText('Last Update:  ' + getTime())
+  const lastUpdated = lastUpdatedStack.addText('Last Update:  ' + NOW)
   lastUpdated.font = Font.lightSystemFont(10);
   lastUpdated.textColor = new Color('#eeeeee');
   lastUpdatedStack.addSpacer();
