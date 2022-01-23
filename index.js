@@ -93,17 +93,10 @@ const getDepartures = async (stopId) => {
 
   const data = await fetch(URLS.departures, params)
 
-  const sanitizedDir = (direction) => {
-    if (direction.length >= MAX_CHAR_LENGTH) {
-      return direction.slice(0, MAX_CHAR_LENGTH - 3) + '...'
-    }
-    return direction;
-  }
-
   return data.Departure.map(dep => ({
-    line: dep.name,
+    line: dep.line.replace('Frankfurt (Main)', 'FFM'),
     time: (dep.rtTime || dep.time).slice(0, -3),
-    direction: sanitizedDir(dep.direction)
+    direction: dep.direction.length >= MAX_CHAR_LENGTH ? dep.direction.substring(0, MAX_CHAR_LENGTH) + '...' : dep.direction,
   }));
 }
 
@@ -185,7 +178,7 @@ const createWidget = async () => {
 
 
   departures.forEach((dep, idx) => {
-    if (idx === MAX_JOURNEYS) return;
+    if (idx >= MAX_JOURNEYS) return;
 
     let rowStack = depStack.addStack();
     rowStack.setPadding(2, 4, 2, 4)
