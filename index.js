@@ -13,10 +13,6 @@ const NOW = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2
 
 const MAX_CHAR_LENGTH = 24;
 
-const DEFAULT_PARAMS = {
-  accessId: API_KEY,
-  format: 'json',
-}
 
 const GRADIENT_COLORS = ['#4b749f', '#243748'];
 const gradient = new LinearGradient();
@@ -29,6 +25,12 @@ if (!API_KEY || !API_KEY.length) {
   if (!args.runsInWidget) {
     API_KEY = FALLBACK_API_KEY;
   }
+}
+
+
+const DEFAULT_PARAMS = {
+  accessId: API_KEY,
+  format: 'json',
 }
 
 const fetch = async (url, params) => {
@@ -47,6 +49,7 @@ const fetch = async (url, params) => {
 
 const getLocation = async () => {
   try {
+    Location.setAccuracyToTenMeters();
     const { latitude, longitude } = await Location.current();
     console.log(`Lat: ${latitude}, Long: ${longitude}`);
     return { lat: latitude, long: longitude };
@@ -97,10 +100,16 @@ const getDepartures = async (stopId) => {
     return null;
   }
 
+  const sanitizeDir = (direction) => {
+    const replaced = direction.replace('Frankfurt (Main)', 'FFM');
+    const shortened = replaced.length >= MAX_CHAR_LENGTH ? replaced.substring(0, MAX_CHAR_LENGTH) + '...' : replaced;
+    return shortened;
+  }
+
   return data.Departure.map(dep => ({
-    line: dep.name.replace('Frankfurt (Main)', 'FFM'),
+    line: dep.name,
     time: (dep.rtTime || dep.time).slice(0, -3),
-    direction: dep.direction.length >= MAX_CHAR_LENGTH ? dep.direction.substring(0, MAX_CHAR_LENGTH) + '...' : dep.direction,
+    direction: sanitizeDir(dep.direction)
   }));
 }
 
