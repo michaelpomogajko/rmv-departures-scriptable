@@ -93,6 +93,10 @@ const getDepartures = async (stopId) => {
 
   const data = await fetch(URLS.departures, params)
 
+  if (!data || !data.Departure) {
+    return null;
+  }
+
   return data.Departure.map(dep => ({
     line: dep.line.replace('Frankfurt (Main)', 'FFM'),
     time: (dep.rtTime || dep.time).slice(0, -3),
