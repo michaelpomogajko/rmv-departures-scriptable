@@ -98,7 +98,7 @@ const getDepartures = async (stopId) => {
   }
 
   return data.Departure.map(dep => ({
-    line: dep.line.replace('Frankfurt (Main)', 'FFM'),
+    line: dep.name.replace('Frankfurt (Main)', 'FFM'),
     time: (dep.rtTime || dep.time).slice(0, -3),
     direction: dep.direction.length >= MAX_CHAR_LENGTH ? dep.direction.substring(0, MAX_CHAR_LENGTH) + '...' : dep.direction,
   }));
