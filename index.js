@@ -101,7 +101,7 @@ const getDepartures = async (stopId) => {
   }
 
   const sanitizeDir = (direction) => {
-    const replaced = direction.replace('Frankfurt (Main)', 'FFM');
+    const replaced = direction.replace('Frankfurt (Main)', 'FFM').replace('Hauptbahnhof', 'Hbf').replace('Bahnhof', 'Bf');
     const shortened = replaced.length >= MAX_CHAR_LENGTH ? replaced.substring(0, MAX_CHAR_LENGTH) + '...' : replaced;
     return shortened;
   }
