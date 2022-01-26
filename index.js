@@ -86,6 +86,21 @@ const getNearbyStop = async (location) => {
 
 }
 
+const replace = (str) => {
+  const REPLACEMENTS = {
+    'Frankfurt (Main)': 'FFM',
+    'Hauptbahnhof': 'Hbf',
+    'Bahnhof': 'Bf',
+    'Flughafen': '🛫',
+  }
+
+  const replaced = Object.entries(REPLACEMENTS).reduce((acc, [key, value]) => {
+    return acc.replace(key, value);
+  }, str);
+
+  return replaced;
+}
+
 
 const getDepartures = async (stopId) => {
   const params = {
