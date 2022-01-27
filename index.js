@@ -33,155 +33,21 @@ const DEFAULT_PARAMS = {
   format: 'json',
 }
 
-const fetch = async (url, params) => {
-  const query = Object.keys(params).map(key => key + '=' + params[key]).join('&');
-  const fetchUrl = url + '?' + query;
-  try {
-    const data = await new Request(fetchUrl).loadJSON();
-    return data;
-  } catch (e) {
-    cosole.error('Error fetching data');
-    console.error(e);
-    return null;
-  }
+const fm = FileManager.local()
+const dir = fm.documentsDirectory()
+const path = fm.joinPath(dir, "location.json")
+
+
+const widget = await createWidget();
+
+if (!config.runsInWidget) {
+  widget.presentMedium();
 }
 
+Script.setWidget(widget);
+Script.complete();
 
-const getLocation = async () => {
-  try {
-    Location.setAccuracyToTenMeters();
-    const { latitude, longitude } = await Location.current();
-    console.log(`Lat: ${latitude}, Long: ${longitude}`);
-    return { lat: latitude, long: longitude };
-  } catch (e) {
-    console.error('Cannot get location');
-    console.error(e);
-    return null;
-  }
-}
-
-const getNearbyStop = async (location) => {
-  const params = {
-    ...DEFAULT_PARAMS,
-    originCoordLat: location.lat,
-    originCoordLong: location.long,
-  };
-
-  try {
-    const data = await fetch(URLS.stops, params)
-    if (!data || !data.stopLocationOrCoordLocation) {
-      throw new Error('No stops found');
-    }
-
-    const stopId = data.stopLocationOrCoordLocation[0].StopLocation.extId;
-    const name = data.stopLocationOrCoordLocation[0].StopLocation.name;
-
-    return { name, stopId };
-
-  } catch (e) {
-    console.error('Error fetching nearby stops');
-    console.error(e);
-    return null;
-  }
-
-}
-
-const replace = (str) => {
-  const REPLACEMENTS = {
-    'Frankfurt (Main)': 'FFM',
-    'Hauptbahnhof': 'Hbf',
-    'Bahnhof': 'Bf',
-    'Flughafen': '🛫',
-  }
-
-  const replaced = Object.entries(REPLACEMENTS).reduce((acc, [key, value]) => {
-    return acc.replace(key, value);
-  }, str);
-
-  return replaced;
-}
-
-
-const getDepartures = async (stopId) => {
-  const params = {
-    ...DEFAULT_PARAMS,
-    id: stopId,
-    maxJourneys: MAX_JOURNEYS
-  }
-
-  const data = await fetch(URLS.departures, params)
-
-  if (!data || !data.Departure) {
-    return null;
-  }
-
-  const sanitizeDir = (direction) => {
-    const replaced = replace(direction);
-    const shortened = replaced.length >= MAX_CHAR_LENGTH ? replaced.substring(0, MAX_CHAR_LENGTH) + '...' : replaced;
-    return shortened;
-  }
-
-  return data.Departure.map(dep => ({
-    line: dep.name,
-    time: (dep.rtTime || dep.time).slice(0, -3),
-    direction: sanitizeDir(dep.direction)
-  }));
-}
-
-const ErrorWidget = (title, message) => {
-  let errorWidget = new ListWidget();
-  errorWidget.backgroundGradient = gradient;
-  let stack = errorWidget.addStack();
-  stack.layoutVertically();
-  stack.centerAlignContent();
-  let widgetTitle = stack.addText(title);
-  if (message) {
-    widgetTitle.font = Font.title2();
-    stack.addText(message);
-  }
-
-  return errorWidget;
-}
-
-
-const getData = async () => {
-  const location = await getLocation();
-
-  if (!location) return {
-    error: {
-      title: `Can't get location!`,
-      message: `Please try again later`
-    }
-  }
-
-  const nearByStop = await getNearbyStop(location);
-
-  if (!nearByStop) {
-    return {
-      error: {
-        title: `Can't get nearby stops!`,
-        message: `Please try again later`
-      }
-    }
-  }
-
-  const { name, stopId } = nearByStop;
-
-  const departures = await getDepartures(stopId);
-
-  if (!departures) {
-    return {
-      error: {
-        title: `Can't get departures!`,
-        message: `Please try again later`
-      }
-    }
-  }
-
-  return { currentStop: name, departures };
-}
-
-const createWidget = async () => {
+async function createWidget() {
   const { currentStop, departures, error } = await getData();
 
   if (error) {
@@ -246,11 +112,164 @@ const createWidget = async () => {
   return widget;
 }
 
-const widget = await createWidget();
+async function fetch(url, params) {
+  const query = Object.keys(params).map(key => key + '=' + params[key]).join('&');
+  const fetchUrl = url + '?' + query;
+  try {
+    const data = await new Request(fetchUrl).loadJSON();
+    return data;
+  } catch (e) {
+    console.error('Error fetching data');
+    console.error(e);
+    return null;
+  }
+}
 
-if (config.runsInWidget) {
-  Script.setWidget(widget);
-  Script.complete();
-} else {
-  widget.presentMedium();
+
+async function getLocation() {
+  try {
+    const { latitude, longitude } = await Location.current();
+    console.log(`Lat: ${latitude}, Long: ${longitude}`);
+
+    const location = { lat: latitude, long: longitude };
+    fm.writeString(path, JSON.stringify(location, null, 2));
+    return location;
+  } catch (e) {
+    console.error('Cannot get location');
+    console.error(e);
+
+    const cachedLocation = fm.readString(path);
+    if (!cachedLocation || cachedLocation === '') return null;
+
+    console.log('Using cached location');
+    const cLoc = JSON.parse(cachedLocation, null)
+    return cLoc
+  }
+}
+
+async function getNearbyStop(location) {
+  const { lat, long } = location;
+
+  console.log(location);
+
+  const params = {
+    ...DEFAULT_PARAMS,
+    originCoordLat: lat,
+    originCoordLong: long,
+  };
+
+  console.log(params);
+
+  try {
+    const data = await fetch(URLS.stops, params)
+    if (!data || !data.stopLocationOrCoordLocation) {
+      throw new Error('No stops found');
+    }
+
+    const stopId = data.stopLocationOrCoordLocation[0].StopLocation.extId;
+    const name = data.stopLocationOrCoordLocation[0].StopLocation.name;
+
+    return { name, stopId };
+
+  } catch (e) {
+    console.error('Error fetching nearby stops');
+    console.error(e);
+    return null;
+  }
+
+}
+
+function replace(str) {
+  const REPLACEMENTS = {
+    'Frankfurt (Main)': 'FFM',
+    'Hauptbahnhof': 'Hbf',
+    'Bahnhof': 'Bf',
+    'Flughafen': '🛫',
+  }
+
+  const replaced = Object.entries(REPLACEMENTS).reduce((acc, [key, value]) => {
+    return acc.replace(key, value);
+  }, str);
+
+  return replaced;
+}
+
+
+async function getDepartures(stopId) {
+  const params = {
+    ...DEFAULT_PARAMS,
+    id: stopId,
+    maxJourneys: MAX_JOURNEYS
+  }
+
+  const data = await fetch(URLS.departures, params)
+
+  if (!data || !data.Departure) {
+    return null;
+  }
+
+  const sanitizeDir = (direction) => {
+    const replaced = replace(direction);
+    const shortened = replaced.length >= MAX_CHAR_LENGTH ? replaced.substring(0, MAX_CHAR_LENGTH) + '...' : replaced;
+    return shortened;
+  }
+
+  return data.Departure.map(dep => ({
+    line: dep.name,
+    time: (dep.rtTime || dep.time).slice(0, -3),
+    direction: sanitizeDir(dep.direction)
+  }));
+}
+
+function ErrorWidget(title, message) {
+  let errorWidget = new ListWidget();
+  errorWidget.backgroundGradient = gradient;
+  let stack = errorWidget.addStack();
+  stack.layoutVertically();
+  stack.centerAlignContent();
+  let widgetTitle = stack.addText(title);
+  if (message) {
+    widgetTitle.font = Font.title2();
+    stack.addText(message);
+  }
+
+  return errorWidget;
+}
+
+
+async function getData() {
+  const location = await getLocation();
+
+  if (!location) return {
+    error: {
+      title: `Can't get location!`,
+      message: `Please try again later`
+    }
+  }
+
+  const nearByStop = await getNearbyStop(location);
+
+  if (!nearByStop) {
+    return {
+      error: {
+        title: `Can't get nearby stops!`,
+        message: `Please try again later`
+      }
+    }
+  }
+
+  const { name, stopId } = nearByStop;
+
+  const departures = await getDepartures(stopId);
+
+  if (!departures) {
+    return {
+      error: {
+        title: `Can't get departures!`,
+        message: `Please try again later`
+      }
+    }
+  }
+
+  return { currentStop: name, departures };
 }
